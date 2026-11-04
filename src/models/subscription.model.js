@@ -5,7 +5,7 @@ const subscriptionSchema = new Schema({
         type: Schema.Types.ObjectId,
         ref: "User"
      },
-     channel: {
+     channel: {  // we can directly add channel name as Id internally mongodb handle it.
         type: Schema.Types.ObjectId,
         ref: "User"
      }
