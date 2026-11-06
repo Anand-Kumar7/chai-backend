@@ -3,6 +3,7 @@ import { ApiError } from "../utils/ApiError.js"
 import { User } from "../models/user.model.js"
 import { uploadOnCloudinary } from "../utils/cloudinary.js"
 import { ApiResponse } from "../utils/ApiResponse.js"
+import jwt from "jsonwebtoken"
 import mongoose from "mongoose"
 
 const generateAccessAndRefreshToken = async(userId) => {
@@ -164,42 +165,51 @@ const logoutUser = asyncHandler(async(req, res) => {
 
 const refreshAccessToken = asyncHandler(async (req, res) => {
     const incomingRefreshToken = req.cookies.refreshToken || req.body.refreshToken
-
-    if(!incomingRefreshToken){
-        new ApiResponse(401, "Unauthorized request")
+    
+    
+    if (!incomingRefreshToken) {
+        throw new ApiError(401, "unauthorized request")
     }
 
     try {
-      const decodedToken = jwtverify(incomingRefreshToken, process.env.REFRESH_TOKEN_SECRET)
-  
-      const user = await User.findById(decodedToken?._id)
-  
-      if(!user){
-        throw new ApiError(401, "Invalid refresh token")
-      }
-  
-      if(incomingRefreshToken !== user?.refreshToken){
-        throw new ApiResponse(401, "Refresh token is expired or used")
-      }
-  
-      const options = {
-          httpOnly: true,
-          secure: true
-      }
-      const {accessToken, newRefreshToken} = await generateAccessAndRefreshToken(user._id)
-  
-      return res
-      .status(200)
-      .cookie("accessToken", accessToken, options)
-      .cookie("refreshToken", newRefreshToken, options)
-      .json(
-         200,
-         {accessToken, refreshToken: newRefreshToken}
-         ,"access token refreshed"
-      )
+        const decodedToken = jwt.verify(
+            incomingRefreshToken,
+            process.env.REFRESH_TOKEN_SECRET
+        )
+
+        const user = await User.findById(decodedToken?._id)
+    
+        if (!user) {
+            throw new ApiError(401, "Invalid refresh token")
+        }
+    
+        if (incomingRefreshToken !== user?.refreshToken) {
+            throw new ApiError(401, "Refresh token is expired or used")
+            
+        }
+    
+        const options = {
+            httpOnly: true,
+            secure: true
+        }
+    
+        const {accessToken, newRefreshToken} = await generateAccessAndRefreshToken(user._id)
+    
+        return res
+        .status(200)
+        .cookie("accessToken", accessToken, options)
+        .cookie("refreshToken", newRefreshToken, options)
+        .json(
+            new ApiResponse(
+                200, 
+                {accessToken, refreshToken: newRefreshToken},
+                "Access token refreshed"
+            )
+        )
     } catch (error) {
-       new ApiError(401, error?.message || "Invalid refresh token")
+        throw new ApiError(401, error?.message || "Invalid refresh token")
     }
+
 })
 
 const changeCurrentPassword = asyncHandler(async (req, res) => {
@@ -207,10 +217,14 @@ const changeCurrentPassword = asyncHandler(async (req, res) => {
       
       const user = await User.findById(req.user?._id);
 
+      if (!user) {
+        throw new ApiError(404, "User not found")
+      }
+
       const isPasswordCorrect = await user.isPasswordCorrect(oldPassword)
 
       if(!isPasswordCorrect){
-        new ApiError(400, "Invalid old password")
+        throw new ApiError(400, "Invalid old password")
       }
 
       user.password = newPassword
@@ -331,7 +345,7 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
 const getUserChannelProfile = asyncHandler(async (req, res) => {
   const {username} = req.params
   if(!username?.trim()){
-    throw new ApiResponse(400, "Username is missing")
+    throw new ApiError(400, "Username is missing")
   }
      const channel = await User.aggregate([
          {
@@ -341,18 +355,18 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
          },
          {
            $lookup: {
-              from: subscriptions, 
+              from: "subscriptions", 
               localField: "_id",
               foreignField: "channel",
-              as: "subcribers"
+              as: "subscribers"
            } 
          },
          {
            $lookup: {
-              from: subscriptions, 
+              from: "subscriptions", 
               localField: "_id",
               foreignField: "subscriber",
-              as: "subcribedTo"
+              as: "subscribedTo"
            } 
          },
          {
@@ -365,7 +379,7 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
               },
               issubscribed: {
                 $cond: {
-                     if: {$in: [req.user?.id, "$subscribers.subscribe"]},
+                     if: {$in: [req.user?._id, "$subscribers.subscribe"]},
                      then: true,
                      else: false
                 }
@@ -443,7 +457,7 @@ const getWatchHistory = asyncHandler(async (req, res) => {
     return res
     .status(200)
     .json(
-       new ApiResponse(200, users[0].watchHistory, "Watch history fetched successfully")
+       new ApiResponse(200, user[0].watchHistory, "Watch history fetched successfully")
     )
 })
 
